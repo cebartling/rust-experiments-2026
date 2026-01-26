@@ -1,7 +1,7 @@
 //! Terminal abstraction for testable rendering.
 //!
 //! Defines the [`Terminal`] trait for all terminal I/O operations, with a
-//! production [`CrosstermTerminal`] implementation and a [`MockTerminal`]
+//! production [`CrosstermTerminal`] implementation and a `MockTerminal`
 //! for unit testing.
 
 use crate::error::LessError;
@@ -43,6 +43,7 @@ pub struct CrosstermTerminal {
 }
 
 impl CrosstermTerminal {
+    /// Create a new crossterm-backed terminal.
     pub fn new() -> Result<Self, LessError> {
         Ok(CrosstermTerminal {
             stdout: io::stdout(),
