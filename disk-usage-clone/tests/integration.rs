@@ -157,7 +157,7 @@ fn test_help_flag() {
         .arg("--help")
         .assert()
         .success()
-        .stdout(predicate::str::contains("Disk usage analysis tool"));
+        .stdout(predicate::str::contains("disk usage analyzer"));
 }
 
 #[test]
