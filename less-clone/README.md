@@ -39,6 +39,18 @@ cargo run -- -N README.md
 cargo test
 ```
 
+## Documentation
+
+```sh
+# Generate API docs (opens in browser)
+cargo doc --no-deps --open
+
+# Generate docs including private items
+cargo doc --no-deps --document-private-items --open
+```
+
+Generated docs are written to `target/doc/less_clone/index.html`.
+
 ## Lint & Format
 
 ```sh

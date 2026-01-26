@@ -16,6 +16,8 @@ A Rust CLI tool that clones the Unix `less` pager functionality. Uses Rust 2024 
 - **Lint:** `cargo clippy`
 - **Format:** `cargo fmt`
 - **Format check:** `cargo fmt -- --check`
+- **Docs:** `cargo doc --no-deps --open`
+- **Docs (with private items):** `cargo doc --no-deps --document-private-items --open`
 
 ## Development Workflow
 
