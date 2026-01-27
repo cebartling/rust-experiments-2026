@@ -4,6 +4,7 @@ pub mod local;
 use async_trait::async_trait;
 use serde::Serialize;
 
+use crate::config::{AppSettings, SttBackendChoice};
 use crate::error::DictationError;
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -28,6 +29,35 @@ pub trait SttEngine: Send + Sync {
     ) -> Result<TranscriptionResult, DictationError>;
     fn kind(&self) -> SttBackendKind;
     async fn health_check(&self) -> Result<(), DictationError>;
+}
+
+/// Creates an STT engine based on the current application settings.
+pub fn create_engine(settings: &AppSettings) -> Result<Box<dyn SttEngine>, DictationError> {
+    match settings.stt_backend {
+        SttBackendChoice::Local => {
+            let engine = if settings.language.is_empty() {
+                local::WhisperLocal::new(settings.local_model_path.clone())?
+            } else {
+                local::WhisperLocal::with_language(
+                    settings.local_model_path.clone(),
+                    settings.language.clone(),
+                )?
+            };
+            Ok(Box::new(engine))
+        }
+        SttBackendChoice::Cloud => {
+            let engine = if settings.language.is_empty() {
+                cloud::CloudStt::new(settings.cloud_api_key.clone(), settings.cloud_model.clone())?
+            } else {
+                cloud::CloudStt::with_language(
+                    settings.cloud_api_key.clone(),
+                    settings.cloud_model.clone(),
+                    settings.language.clone(),
+                )?
+            };
+            Ok(Box::new(engine))
+        }
+    }
 }
 
 #[cfg(test)]
@@ -65,5 +95,42 @@ mod tests {
         let json = serde_json::to_value(&result).unwrap();
         assert_eq!(json["text"], "test");
         assert!(json["language"].is_null());
+    }
+
+    #[test]
+    fn create_engine_local_with_valid_path() {
+        let mut settings = AppSettings::default();
+        settings.stt_backend = SttBackendChoice::Local;
+        settings.local_model_path = "/path/to/model.bin".into();
+        let engine = create_engine(&settings).unwrap();
+        assert_eq!(engine.kind(), SttBackendKind::Local);
+    }
+
+    #[test]
+    fn create_engine_local_rejects_empty_path() {
+        let mut settings = AppSettings::default();
+        settings.stt_backend = SttBackendChoice::Local;
+        settings.local_model_path = String::new();
+        let result = create_engine(&settings);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn create_engine_cloud_with_valid_key() {
+        let mut settings = AppSettings::default();
+        settings.stt_backend = SttBackendChoice::Cloud;
+        settings.cloud_api_key = "sk-test-key".into();
+        settings.cloud_model = "whisper-1".into();
+        let engine = create_engine(&settings).unwrap();
+        assert_eq!(engine.kind(), SttBackendKind::Cloud);
+    }
+
+    #[test]
+    fn create_engine_cloud_rejects_empty_key() {
+        let mut settings = AppSettings::default();
+        settings.stt_backend = SttBackendChoice::Cloud;
+        settings.cloud_api_key = String::new();
+        let result = create_engine(&settings);
+        assert!(result.is_err());
     }
 }

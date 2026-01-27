@@ -21,11 +21,11 @@ pub fn update_settings(
 }
 
 #[tauri::command]
-pub fn test_stt_backend() -> Result<String, DictationError> {
-    // TODO: Phase 3 - run a health check on the configured STT backend
-    Err(DictationError::Stt(
-        "STT backend test not yet implemented".into(),
-    ))
+pub async fn test_stt_backend(state: State<'_, AppState>) -> Result<String, DictationError> {
+    let settings = state.settings.lock().unwrap().clone();
+    let engine = crate::stt::create_engine(&settings)?;
+    engine.health_check().await?;
+    Ok(format!("{:?} backend is healthy", engine.kind()))
 }
 
 #[tauri::command]
