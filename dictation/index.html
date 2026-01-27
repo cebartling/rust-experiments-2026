@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Dictation</title>
+    <style>
+      body {
+        font-family: system-ui, -apple-system, sans-serif;
+        margin: 0;
+        padding: 16px;
+        background: #1a1a2e;
+        color: #e0e0e0;
+      }
+      #app {
+        max-width: 440px;
+        margin: 0 auto;
+      }
+      h1 {
+        font-size: 1.4rem;
+        margin-bottom: 1rem;
+      }
+      .status {
+        padding: 12px;
+        border-radius: 8px;
+        background: #16213e;
+        text-align: center;
+        font-size: 1.1rem;
+        margin-bottom: 1rem;
+      }
+      .status.idle { border-left: 4px solid #4ecca3; }
+      .status.recording { border-left: 4px solid #e74c3c; }
+      .status.transcribing { border-left: 4px solid #f39c12; }
+    </style>
+  </head>
+  <body>
+    <div id="app">
+      <h1>Dictation</h1>
+      <div id="status" class="status idle">Idle</div>
+      <div id="log"></div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
