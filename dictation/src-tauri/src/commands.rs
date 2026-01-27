@@ -30,8 +30,5 @@ pub fn test_stt_backend() -> Result<String, DictationError> {
 
 #[tauri::command]
 pub fn get_audio_devices() -> Result<Vec<String>, DictationError> {
-    // TODO: Phase 2 - enumerate cpal audio input devices
-    Err(DictationError::Audio(
-        "audio device enumeration not yet implemented".into(),
-    ))
+    crate::audio::capture::list_input_devices()
 }

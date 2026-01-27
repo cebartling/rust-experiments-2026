@@ -1,7 +1,16 @@
+use rubato::{
+    Resampler, SincFixedIn, SincInterpolationParameters, SincInterpolationType, WindowFunction,
+};
+
 use crate::error::DictationError;
 
 pub const TARGET_SAMPLE_RATE: u32 = 16_000;
 
+/// Resamples multi-channel audio to 16kHz mono f32, as required by Whisper.
+///
+/// Steps:
+/// 1. Mix down to mono (average all channels)
+/// 2. Resample to 16kHz using rubato's sinc interpolation
 pub fn resample_to_16khz_mono(
     input: &[f32],
     input_sample_rate: u32,
@@ -33,28 +42,61 @@ pub fn resample_to_16khz_mono(
         return Ok(mono);
     }
 
-    // TODO: Phase 2 - use rubato for high-quality resampling
-    // For now, use simple linear interpolation as a placeholder
+    resample_with_rubato(&mono, input_sample_rate)
+}
+
+fn resample_with_rubato(mono: &[f32], input_sample_rate: u32) -> Result<Vec<f32>, DictationError> {
     let ratio = TARGET_SAMPLE_RATE as f64 / input_sample_rate as f64;
-    let output_len = (mono.len() as f64 * ratio).ceil() as usize;
-    let mut output = Vec::with_capacity(output_len);
 
-    for i in 0..output_len {
-        let src_pos = i as f64 / ratio;
-        let src_idx = src_pos.floor() as usize;
-        let frac = src_pos - src_idx as f64;
+    let params = SincInterpolationParameters {
+        sinc_len: 256,
+        f_cutoff: 0.95,
+        oversampling_factor: 256,
+        interpolation: SincInterpolationType::Linear,
+        window: WindowFunction::BlackmanHarris2,
+    };
 
-        let sample = if src_idx + 1 < mono.len() {
-            mono[src_idx] * (1.0 - frac as f32) + mono[src_idx + 1] * frac as f32
-        } else if src_idx < mono.len() {
-            mono[src_idx]
-        } else {
-            0.0
-        };
-        output.push(sample);
+    let chunk_size = 1024.max(mono.len().min(8192));
+
+    let mut resampler = SincFixedIn::<f64>::new(ratio, 2.0, params, chunk_size, 1)
+        .map_err(|e| DictationError::Audio(format!("create resampler: {e}")))?;
+
+    // Convert f32 -> f64
+    let input_f64: Vec<f64> = mono.iter().map(|&s| s as f64).collect();
+
+    let frames_needed = resampler.input_frames_next();
+    let mut output_f64: Vec<f64> = Vec::new();
+
+    if input_f64.len() >= frames_needed {
+        // Process full chunks
+        let mut pos = 0;
+        while pos + frames_needed <= input_f64.len() {
+            let chunk = &input_f64[pos..pos + frames_needed];
+            let result = resampler
+                .process(&[chunk], None)
+                .map_err(|e| DictationError::Audio(format!("resample: {e}")))?;
+            output_f64.extend_from_slice(&result[0]);
+            pos += frames_needed;
+        }
+
+        // Process remaining samples as partial
+        if pos < input_f64.len() {
+            let remaining = &input_f64[pos..];
+            let result = resampler
+                .process_partial(Some(&[remaining]), None)
+                .map_err(|e| DictationError::Audio(format!("resample partial: {e}")))?;
+            output_f64.extend_from_slice(&result[0]);
+        }
+    } else {
+        // Input is shorter than one chunk — use process_partial directly
+        let result = resampler
+            .process_partial(Some(&[&input_f64]), None)
+            .map_err(|e| DictationError::Audio(format!("resample partial: {e}")))?;
+        output_f64.extend_from_slice(&result[0]);
     }
 
-    Ok(output)
+    // Convert f64 -> f32
+    Ok(output_f64.iter().map(|&s| s as f32).collect())
 }
 
 #[cfg(test)]
@@ -98,19 +140,82 @@ mod tests {
 
     #[test]
     fn downsampling_reduces_sample_count() {
-        // 32kHz -> 16kHz should roughly halve the samples
-        let input: Vec<f32> = (0..100).map(|i| (i as f32) / 100.0).collect();
-        let result = resample_to_16khz_mono(&input, 32_000, 1).unwrap();
-        assert!(result.len() <= 51); // approximately half
-        assert!(result.len() >= 49);
+        // 48kHz -> 16kHz should yield ~1/3 of the samples
+        let input: Vec<f32> = (0..4800).map(|i| (i as f32 / 4800.0).sin()).collect();
+        let result = resample_to_16khz_mono(&input, 48_000, 1).unwrap();
+        let expected = (4800.0 * 16_000.0 / 48_000.0) as usize; // 1600
+        // Allow some tolerance for resampler edge effects
+        assert!(
+            result.len().abs_diff(expected) < 50,
+            "expected ~{expected}, got {}",
+            result.len()
+        );
     }
 
     #[test]
     fn upsampling_increases_sample_count() {
         // 8kHz -> 16kHz should roughly double the samples
-        let input: Vec<f32> = (0..100).map(|i| (i as f32) / 100.0).collect();
+        let input: Vec<f32> = (0..8000).map(|i| (i as f32 / 8000.0).sin()).collect();
         let result = resample_to_16khz_mono(&input, 8_000, 1).unwrap();
-        assert!(result.len() >= 199);
-        assert!(result.len() <= 201);
+        let expected = (8000.0 * 16_000.0 / 8_000.0) as usize; // 16000
+        // Sinc resampler adds latency padding; allow ~2% tolerance
+        assert!(
+            result.len().abs_diff(expected) < 400,
+            "expected ~{expected}, got {}",
+            result.len()
+        );
+    }
+
+    #[test]
+    fn resampled_signal_preserves_dc_level() {
+        // Constant signal at 0.5 should remain ~0.5 after resampling
+        let input = vec![0.5_f32; 4800];
+        let result = resample_to_16khz_mono(&input, 48_000, 1).unwrap();
+        // Skip first/last few samples (edge effects from sinc filter)
+        let mid = &result[10..result.len().saturating_sub(10)];
+        for &sample in mid {
+            assert!((sample - 0.5).abs() < 0.01, "expected ~0.5, got {sample}");
+        }
+    }
+
+    #[test]
+    fn stereo_48khz_to_mono_16khz() {
+        // Full pipeline: stereo 48kHz -> mono 16kHz
+        let num_frames = 4800;
+        let mut input = Vec::with_capacity(num_frames * 2);
+        for i in 0..num_frames {
+            let val = (i as f32 / num_frames as f32).sin();
+            input.push(val); // L
+            input.push(val); // R (same as L)
+        }
+        let result = resample_to_16khz_mono(&input, 48_000, 2).unwrap();
+        let expected = (num_frames as f64 * 16_000.0 / 48_000.0) as usize;
+        assert!(
+            result.len().abs_diff(expected) < 50,
+            "expected ~{expected}, got {}",
+            result.len()
+        );
+    }
+
+    #[test]
+    fn small_input_resamples_correctly() {
+        // Very small input (less than one chunk)
+        let input = vec![0.0, 0.5, 1.0, 0.5, 0.0];
+        let result = resample_to_16khz_mono(&input, 48_000, 1).unwrap();
+        // 5 samples at 48kHz -> ~1-2 samples at 16kHz
+        assert!(!result.is_empty());
+    }
+
+    #[test]
+    fn common_sample_rate_44100() {
+        // 44.1kHz is a very common sample rate
+        let input: Vec<f32> = (0..4410).map(|i| (i as f32 / 4410.0).sin()).collect();
+        let result = resample_to_16khz_mono(&input, 44_100, 1).unwrap();
+        let expected = (4410.0 * 16_000.0 / 44_100.0) as usize; // 1600
+        assert!(
+            result.len().abs_diff(expected) < 50,
+            "expected ~{expected}, got {}",
+            result.len()
+        );
     }
 }
