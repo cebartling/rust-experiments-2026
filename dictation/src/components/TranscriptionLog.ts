@@ -13,9 +13,17 @@ export function createTranscriptionLog(container: HTMLElement) {
   listen<TranscriptionPayload>("transcription-complete", (event) => {
     const entry = document.createElement("div");
     entry.className = "log-entry";
-    entry.style.cssText =
-      "padding:8px;margin:4px 0;background:#16213e;border-radius:4px;font-size:0.9rem;";
-    entry.textContent = event.payload.text;
+
+    const ts = document.createElement("div");
+    ts.className = "timestamp";
+    const date = new Date(Number(event.payload.timestamp));
+    ts.textContent = date.toLocaleTimeString();
+    entry.appendChild(ts);
+
+    const text = document.createElement("div");
+    text.textContent = event.payload.text;
+    entry.appendChild(text);
+
     log.prepend(entry);
   });
 

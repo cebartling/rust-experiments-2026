@@ -12,6 +12,7 @@ pub mod stt;
 use state::AppState;
 use tauri::Manager;
 use tauri_plugin_global_shortcut::GlobalShortcutExt;
+use tauri_plugin_store::StoreExt;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -20,6 +21,15 @@ pub fn run() {
         .plugin(tauri_plugin_store::Builder::new().build())
         .manage(AppState::new())
         .setup(|app| {
+            // Load persisted settings from store (if any)
+            if let Ok(store) = app.store("settings.json")
+                && let Some(value) = store.get("settings")
+                && let Ok(settings) = serde_json::from_value::<config::AppSettings>(value.clone())
+            {
+                let state = app.state::<AppState>();
+                *state.settings.lock().unwrap() = settings;
+            }
+
             let hotkey = {
                 let state = app.state::<AppState>();
                 let settings = state.settings.lock().unwrap();

@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct AppSettings {
     pub hotkey: String,
     pub stt_backend: SttBackendChoice,
@@ -100,6 +101,24 @@ mod tests {
         assert_eq!(local, "\"local\"");
         let cloud = serde_json::to_string(&SttBackendChoice::Cloud).unwrap();
         assert_eq!(cloud, "\"cloud\"");
+    }
+
+    #[test]
+    fn settings_serialize_camel_case_field_names() {
+        let settings = AppSettings::default();
+        let json = serde_json::to_string(&settings).unwrap();
+        assert!(json.contains("\"sttBackend\""));
+        assert!(json.contains("\"localModelPath\""));
+        assert!(json.contains("\"localModelSize\""));
+        assert!(json.contains("\"cloudApiKey\""));
+        assert!(json.contains("\"cloudModel\""));
+        assert!(json.contains("\"autoInject\""));
+        assert!(json.contains("\"startMinimized\""));
+        assert!(json.contains("\"launchAtStartup\""));
+        // Should NOT contain snake_case versions
+        assert!(!json.contains("\"stt_backend\""));
+        assert!(!json.contains("\"local_model_path\""));
+        assert!(!json.contains("\"auto_inject\""));
     }
 
     #[test]

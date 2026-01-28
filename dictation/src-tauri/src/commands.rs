@@ -1,4 +1,5 @@
 use tauri::{Manager, State};
+use tauri_plugin_store::StoreExt;
 
 use crate::config::AppSettings;
 use crate::error::DictationError;
@@ -12,11 +13,19 @@ pub fn get_settings(state: State<'_, AppState>) -> Result<AppSettings, Dictation
 
 #[tauri::command]
 pub fn update_settings(
+    app: tauri::AppHandle,
     state: State<'_, AppState>,
     settings: AppSettings,
 ) -> Result<(), DictationError> {
     let mut current = state.settings.lock().unwrap();
-    *current = settings;
+    *current = settings.clone();
+
+    if let Ok(store) = app.store("settings.json") {
+        let value = serde_json::to_value(&settings)
+            .map_err(|e| DictationError::Config(format!("serialize settings: {e}")))?;
+        store.set("settings", value);
+    }
+
     Ok(())
 }
 
