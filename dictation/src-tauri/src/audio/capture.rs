@@ -20,6 +20,14 @@ pub struct AudioRecorder {
     device: Option<Device>,
 }
 
+// SAFETY: AudioRecorder is only accessed through Mutex<Option<AudioRecorder>> in AppState,
+// which guarantees exclusive access. cpal::Stream and cpal::Device are marked !Send via
+// PhantomData<*mut ()> as a conservative measure, but the underlying platform handles
+// (ALSA file descriptors, PulseAudio contexts, CoreAudio IDs) are safe to move between
+// threads when access is serialized. The Stream's audio callback captures only
+// Arc<Mutex<Vec<f32>>> which is independently Send+Sync.
+unsafe impl Send for AudioRecorder {}
+
 impl Default for AudioRecorder {
     fn default() -> Self {
         Self::new()
