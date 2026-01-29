@@ -49,7 +49,7 @@ graph TB
     Audio --> Cpal
     Audio --> Rubato
     STT --> Whisper
-    STT -.->|HTTPS (optional)| OpenAI
+    STT -.->|"HTTPS (optional)"| OpenAI
     Injection --> Enigo
     Config --> PluginStore
     Injection -->|Keyboard Simulation| App
