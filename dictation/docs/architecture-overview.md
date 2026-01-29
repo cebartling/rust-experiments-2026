@@ -4,115 +4,125 @@ This document provides a high-level overview of the Dictation application archit
 
 ## System Architecture
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                         User's Desktop                           │
-│                                                                   │
-│  ┌──────────────┐                                                │
-│  │   Any App    │  ← Text injected here                         │
-│  │ (VS Code,    │                                                │
-│  │  Browser,    │                                                │
-│  │  Terminal)   │                                                │
-│  └──────────────┘                                                │
-│         ↑                                                         │
-│         │ Keyboard Simulation (enigo)                            │
-│         │                                                         │
-│  ┌──────┴────────────────────────────────────────────────────┐  │
-│  │           Dictation Application (Tauri)                    │  │
-│  │                                                              │  │
-│  │  ┌─────────────────────────────────────────────────────┐  │  │
-│  │  │  Frontend (Vite + TypeScript)                        │  │  │
-│  │  │  ┌───────────┐  ┌──────────┐  ┌────────────────┐   │  │  │
-│  │  │  │  Status   │  │ Settings │  │ Transcription  │   │  │  │
-│  │  │  │ Indicator │  │  Panel   │  │     Log        │   │  │  │
-│  │  │  └───────────┘  └──────────┘  └────────────────┘   │  │  │
-│  │  └─────────────────────────────────────────────────────┘  │  │
-│  │         ↕ Tauri IPC (Commands + Events)                    │  │
-│  │  ┌─────────────────────────────────────────────────────┐  │  │
-│  │  │  Backend (Rust)                                      │  │  │
-│  │  │                                                       │  │  │
-│  │  │  ┌──────────┐  ┌─────────┐  ┌──────────┐           │  │  │
-│  │  │  │  Hotkey  │  │  Audio  │  │   STT    │           │  │  │
-│  │  │  │  Module  │  │Pipeline │  │  Engine  │           │  │  │
-│  │  │  └────┬─────┘  └────┬────┘  └────┬─────┘           │  │  │
-│  │  │       │             │             │                  │  │  │
-│  │  │  ┌────┴─────┐  ┌───┴─────┐  ┌───┴──────┐           │  │  │
-│  │  │  │ Global   │  │  cpal   │  │ whisper- │           │  │  │
-│  │  │  │ Shortcut │  │ rubato  │  │    rs    │           │  │  │
-│  │  │  └──────────┘  └─────────┘  └──────────┘           │  │  │
-│  │  │                                   │                  │  │  │
-│  │  │  ┌──────────┐  ┌─────────┐       │                 │  │  │
-│  │  │  │ Text     │  │ Config  │       │                 │  │  │
-│  │  │  │Injection │  │  Store  │       │                 │  │  │
-│  │  │  └──────────┘  └─────────┘       │                 │  │  │
-│  │  │       │             │             │                  │  │  │
-│  │  │  ┌────┴─────┐  ┌───┴─────┐       │                 │  │  │
-│  │  │  │  enigo   │  │ plugin- │       │                 │  │  │
-│  │  │  │          │  │  store  │       │                 │  │  │
-│  │  │  └──────────┘  └─────────┘       │                 │  │  │
-│  │  └──────────────────────────────────┼──────────────────┘  │  │
-│  └───────────────────────────────────────┼──────────────────────┘
-│                                          │                      │
-│  ┌───────────────┐                      │                      │
-│  │  Microphone   │──────────────────────┘                      │
-│  └───────────────┘                                              │
-│                                                                  │
-└──────────────────────────────────────────┼───────────────────────┘
-                                          │
-                                          │ HTTPS (optional)
-                                          ↓
-                                  ┌───────────────┐
-                                  │  OpenAI API   │
-                                  │ (Cloud STT)   │
-                                  └───────────────┘
+```mermaid
+graph TB
+    subgraph Desktop["User's Desktop"]
+        App["Any App<br/>(VS Code, Browser, Terminal)"]
+        Mic["Microphone"]
+
+        subgraph Tauri["Dictation Application (Tauri)"]
+            subgraph Frontend["Frontend (Vite + TypeScript)"]
+                Status["Status Indicator"]
+                Settings["Settings Panel"]
+                Log["Transcription Log"]
+            end
+
+            IPC["Tauri IPC<br/>(Commands + Events)"]
+
+            subgraph Backend["Backend (Rust)"]
+                subgraph Modules["Core Modules"]
+                    Hotkey["Hotkey Module"]
+                    Audio["Audio Pipeline"]
+                    STT["STT Engine"]
+                    Injection["Text Injection"]
+                    Config["Config Store"]
+                end
+
+                subgraph Libraries["Dependencies"]
+                    GlobalShortcut["tauri-plugin-global-shortcut"]
+                    Cpal["cpal"]
+                    Rubato["rubato"]
+                    Whisper["whisper-rs"]
+                    Enigo["enigo"]
+                    PluginStore["tauri-plugin-store"]
+                end
+            end
+        end
+    end
+
+    OpenAI["OpenAI API<br/>(Cloud STT)"]
+
+    Mic -->|Audio Input| Audio
+    Frontend <-->|IPC| IPC
+    IPC <-->|Commands/Events| Backend
+    Hotkey --> GlobalShortcut
+    Audio --> Cpal
+    Audio --> Rubato
+    STT --> Whisper
+    STT -.->|HTTPS (optional)| OpenAI
+    Injection --> Enigo
+    Config --> PluginStore
+    Injection -->|Keyboard Simulation| App
+
+    classDef frontend fill:#e1f5ff,stroke:#01579b
+    classDef backend fill:#fff3e0,stroke:#e65100
+    classDef external fill:#f3e5f5,stroke:#4a148c
+    classDef library fill:#e8f5e9,stroke:#1b5e20
+
+    class Frontend,Status,Settings,Log frontend
+    class Backend,Modules,Hotkey,Audio,STT,Injection,Config backend
+    class App,Mic,OpenAI external
+    class Libraries,GlobalShortcut,Cpal,Rubato,Whisper,Enigo,PluginStore library
 ```
 
 ## Data Flow: Push-to-Talk Session
 
-```
-1. User holds keyboard shortcut (Ctrl+Shift+Space)
-   │
-   ↓
-2. Global Hotkey Module detects key press
-   │
-   ↓
-3. Audio Pipeline starts capturing via cpal
-   │  (Microphone → Buffer)
-   │
-   ↓
-4. Frontend shows "Recording..." indicator
-   │
-   ↓
-5. User speaks, then releases key
-   │
-   ↓
-6. Global Hotkey Module detects key release
-   │
-   ↓
-7. Audio Pipeline stops, resamples buffer via rubato
-   │  (Buffer → 16kHz mono)
-   │
-   ↓
-8. Resampled audio sent to STT Engine
-   │
-   ├─→ Local: whisper-rs processes audio
-   │           (Runs on device CPU/GPU)
-   │
-   └─→ Cloud: HTTP POST to OpenAI API
-               (Audio sent over HTTPS)
-   │
-   ↓
-9. Transcription result returned
-   │
-   ↓
-10. Text Injection Module simulates typing via enigo
-    │  (Types at cursor in active application)
-    │
-    ↓
-11. Frontend logs transcription in history
-    │
-    ↓
-12. System returns to idle state
+```mermaid
+sequenceDiagram
+    actor User
+    participant Hotkey as Global Hotkey Module
+    participant Audio as Audio Pipeline
+    participant Frontend as Frontend UI
+    participant STT as STT Engine
+    participant Local as whisper-rs
+    participant Cloud as OpenAI API
+    participant Injection as Text Injection
+    participant App as Target Application
+
+    User->>Hotkey: Hold shortcut (Ctrl+Shift+Space)
+    activate Hotkey
+    Hotkey->>Audio: Start capturing
+    activate Audio
+    Audio->>Audio: Microphone → Buffer
+    Hotkey->>Frontend: Recording event
+    Frontend->>Frontend: Show "Recording..." indicator
+
+    Note over User: User speaks
+
+    User->>Hotkey: Release shortcut
+    deactivate Hotkey
+    Hotkey->>Audio: Stop capturing
+    Audio->>Audio: Resample buffer<br/>(Buffer → 16kHz mono)
+    deactivate Audio
+
+    Audio->>STT: Send resampled audio
+    activate STT
+    Frontend->>Frontend: Show "Transcribing..." indicator
+
+    alt Local STT
+        STT->>Local: Process audio
+        activate Local
+        Note over Local: Runs on device<br/>CPU/GPU
+        Local-->>STT: Transcription result
+        deactivate Local
+    else Cloud STT
+        STT->>Cloud: HTTP POST (HTTPS)
+        activate Cloud
+        Note over Cloud: Audio sent<br/>over network
+        Cloud-->>STT: Transcription result
+        deactivate Cloud
+    end
+
+    STT->>Injection: Transcribed text
+    deactivate STT
+    activate Injection
+    Injection->>App: Simulate typing (enigo)
+    Note over App: Text appears<br/>at cursor
+    deactivate Injection
+
+    Injection->>Frontend: Injection complete
+    Frontend->>Frontend: Log transcription in history
+    Frontend->>Frontend: Return to idle state
 ```
 
 ## Module Responsibilities
@@ -166,30 +176,33 @@ This document provides a high-level overview of the Dictation application archit
 
 ## State Machine: Recording Flow
 
-```
-┌──────────┐
-│   Idle   │────────────────┐
-└──────────┘                │
-     ↑                      │ Shortcut pressed
-     │                      ↓
-     │              ┌──────────────┐
-     │              │  Recording   │
-     │              └──────────────┘
-     │                      │
-     │                      │ Shortcut released
-     │                      ↓
-     │              ┌──────────────┐
-     │              │Transcribing  │
-     │              └──────────────┘
-     │                      │
-     │                      │ Result received
-     │                      ↓
-     │              ┌──────────────┐
-     │              │  Injecting   │
-     │              └──────────────┘
-     │                      │
-     │                      │ Injection complete
-     └──────────────────────┘
+```mermaid
+stateDiagram-v2
+    [*] --> Idle
+    Idle --> Recording: Shortcut pressed
+    Recording --> Transcribing: Shortcut released
+    Transcribing --> Injecting: Result received
+    Injecting --> Idle: Injection complete
+
+    note right of Idle
+        Waiting for user input
+        Microphone inactive
+    end note
+
+    note right of Recording
+        Audio being captured
+        Buffer filling
+    end note
+
+    note right of Transcribing
+        Audio being processed
+        Local or cloud STT
+    end note
+
+    note right of Injecting
+        Text being typed
+        Via keyboard simulation
+    end note
 ```
 
 ## Technology Stack
